@@ -12,19 +12,20 @@ async function request(path, body) {
   return res.json()
 }
 
-// Mock fallback for when backend is not available
-function mockChat(suspectName) {
-  const responses = [
-    '这件事……我不太想谈。',
-    '你问这个干什么？和我有关系吗？',
-    '好吧，我承认那天晚上我确实在场。但我什么都没做。',
-    '[紧张] 你……你怎么知道的？谁告诉你的？',
-    '我不明白你在暗示什么。我很配合你们调查了。',
-    '[慌乱] 等等，你搞错了，不是我！我虽然和他有过节，但不至于……',
-    '你想让我说什么？我已经把知道的都说了。',
-    '那天晚上我见到了一个人。但我不能说那是谁。',
-  ]
-  const text = responses[Math.floor(Math.random() * responses.length)]
+// Mock fallback for when backend is not available (local dev)
+const MOCK_RESPONSES = [
+  '这件事……我不太想谈。',
+  '你问这个干什么？和我有关系吗？',
+  '好吧，我承认那天晚上我确实在场。但我什么都没做。',
+  '[紧张] 你……你怎么知道的？谁告诉你的？',
+  '我不明白你在暗示什么。我很配合你们调查了。',
+  '[慌乱] 等等，你搞错了，不是我！我虽然和他有过节，但不至于……',
+  '你想让我说什么？我已经把知道的都说了。',
+  '那天晚上我见到了一个人。但我不能说那是谁。',
+]
+
+function mockChat() {
+  const text = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)]
   const trimText = text.trimStart()
   const emotionMark = trimText.startsWith('[') ? trimText.match(/^\[(.*?)\]/)?.[1] : null
   return { text, emotionMark: emotionMark || null }
@@ -42,13 +43,11 @@ function mockJudge(accusation, state) {
   }
 }
 
-// --- Public API ---
 export async function chat(systemPrompt, messages, state) {
   try {
     return await request('/chat', { systemPrompt, messages })
   } catch {
-    const suspect = state.currentCase.suspects.find(s => s.id === state.activeSuspect)
-    return mockChat(suspect?.name || '嫌疑人')
+    return mockChat()
   }
 }
 
