@@ -1,4 +1,4 @@
-const API_BASE = '/api'
+const API_BASE = 'https://midnight-api.443351609.workers.dev/api'
 
 async function request(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
