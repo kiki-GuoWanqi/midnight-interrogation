@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Header from './Header'
 import CaseBoard from './CaseBoard'
 import ClueBoard from './ClueBoard'
@@ -10,18 +10,22 @@ import { startBGM, stopBGM, toggleBGM, getIsPlaying } from '../bgm'
 
 export default function Interrogation({ state, dispatch }) {
   const [input, setInput] = useState('')
-  const [typing, setTyping] = useState(null) // { text: string, emotionMark: string|null }
+  const [typing, setTyping] = useState(null)
   const [isTyping, setIsTyping] = useState(false)
   const [bgmPlaying, setBgmPlaying] = useState(getIsPlaying)
+  const [retryCtx, setRetryCtx] = useState(null) // { systemPrompt, msgs, sentToId }
+  const [toast, setToast] = useState('')
   const chatEndRef = useRef(null)
   const inputRef = useRef(null)
   const cancelTypewriterRef = useRef(null)
+  const requestIdRef = useRef(0)
+  const toastTimerRef = useRef(null)
 
   const activeId = state.activeSuspect
   const activeSuspect = state.suspects[activeId]
   const activeProfile = activeSuspect?.profile
   const forensicAvailable =
-    state.usedForensicClues.length < state.currentCase.forensicClues.length
+    state.usedForensicClues.length < (state.dynamicForensicClues || state.currentCase.forensicClues).length
 
   // Auto-scroll
   useEffect(() => {
@@ -47,62 +51,78 @@ export default function Interrogation({ state, dispatch }) {
   useEffect(() => {
     return () => {
       cancelTypewriterRef.current?.()
+      clearTimeout(toastTimerRef.current)
     }
   }, [])
 
-  const handleSend = async () => {
-    const text = input.trim()
-    if (!text || state.isLoading || isTyping || state.questionsRemaining <= 0) return
+  const showToast = useCallback((msg) => {
+    setToast(msg)
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(''), 2000)
+  }, [])
 
-    // Cancel any ongoing typewriter
-    cancelTypewriterRef.current?.()
-    setTyping(null)
-    setIsTyping(false)
-
-    dispatch({ type: 'SEND_MESSAGE', suspectId: activeId, text })
-    setInput('')
-
+  // Core API call — shared by handleSend and handleRetry
+  const doApiCall = useCallback(async (systemPrompt, msgs, sentToId, requestId) => {
     try {
-      const msgs = activeSuspect.chatHistory.map(m => ({
-        role: m.role === 'player' ? 'user' : 'assistant',
-        content: m.text,
-      }))
-      msgs.push({ role: 'user', content: text })
-
-      const result = await chat(
-        activeProfile?.systemPrompt || '',
-        msgs,
-        state
-      )
+      const result = await chat(systemPrompt, msgs)
+      if (requestId !== requestIdRef.current) return
 
       const emotionMark = result.emotionMark || null
       const cleanText = result.text.replace(/^\[紧张\]|^\[慌乱\]/, '').trim()
 
-      // Start typewriter
+      setRetryCtx(null)
       setIsTyping(true)
       setTyping({ text: '', emotionMark })
 
       cancelTypewriterRef.current = createTypewriter(
         cleanText,
-        (partial) => {
-          setTyping({ text: partial, emotionMark })
-        },
+        (partial) => setTyping({ text: partial, emotionMark }),
         () => {
-          // Typewriter done — add to chat history
-          dispatch({
-            type: 'RECEIVE_MESSAGE',
-            suspectId: activeId,
-            text: cleanText,
-            emotionMark,
-          })
+          if (requestId !== requestIdRef.current) return
+          dispatch({ type: 'RECEIVE_MESSAGE', suspectId: sentToId, text: cleanText, emotionMark })
           setTyping(null)
           setIsTyping(false)
         },
         40
       )
     } catch {
-      dispatch({ type: 'CHAT_ERROR' })
+      if (requestId !== requestIdRef.current) return
+      // Refund the question — real API failure
+      dispatch({ type: 'CHAT_ERROR', refund: true })
+      setRetryCtx({ systemPrompt, msgs, sentToId })
     }
+  }, [dispatch])
+
+  const handleSend = async () => {
+    const text = input.trim()
+    if (!text || state.isLoading || isTyping || state.questionsRemaining <= 0) return
+
+    cancelTypewriterRef.current?.()
+    setTyping(null)
+    setIsTyping(false)
+    setRetryCtx(null)
+
+    const requestId = ++requestIdRef.current
+    const sentToId = activeId
+
+    dispatch({ type: 'SEND_MESSAGE', suspectId: activeId, text })
+    setInput('')
+
+    const msgs = activeSuspect.chatHistory.map(m => ({
+      role: m.role === 'player' ? 'user' : 'assistant',
+      content: m.text,
+    }))
+    msgs.push({ role: 'user', content: text })
+
+    await doApiCall(activeProfile?.systemPrompt || '', msgs, sentToId, requestId)
+  }
+
+  const handleRetry = async () => {
+    if (!retryCtx || state.isLoading || isTyping) return
+    const { systemPrompt, msgs, sentToId } = retryCtx
+    const requestId = ++requestIdRef.current
+    dispatch({ type: 'SET_LOADING' })
+    await doApiCall(systemPrompt, msgs, sentToId, requestId)
   }
 
   const handleKeyDown = (e) => {
@@ -113,14 +133,19 @@ export default function Interrogation({ state, dispatch }) {
   }
 
   const handleSwitchSuspect = (id) => {
+    if (id === activeId) return
+    requestIdRef.current++
     cancelTypewriterRef.current?.()
     setTyping(null)
     setIsTyping(false)
+    setRetryCtx(null)
+    if (state.isLoading) dispatch({ type: 'CHAT_ERROR' }) // no refund — user switched away
     dispatch({ type: 'SWITCH_SUSPECT', suspectId: id })
   }
 
   const handleSaveClue = (message) => {
     dispatch({ type: 'SAVE_CLUE', suspectId: activeId, text: message.text })
+    showToast('已保存到线索板')
   }
 
   const handleToggleBGM = () => {
@@ -174,7 +199,7 @@ export default function Interrogation({ state, dispatch }) {
 
           {/* Messages */}
           <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
-            {activeSuspect?.chatHistory.length === 0 && !typing && (
+            {activeSuspect?.chatHistory.length === 0 && !typing && !retryCtx && (
               <p style={{
                 color: 'var(--text-muted)', textAlign: 'center',
                 marginTop: '60px', fontStyle: 'italic',
@@ -193,13 +218,27 @@ export default function Interrogation({ state, dispatch }) {
             {/* Typewriter bubble */}
             {typing && (
               <ChatBubble
-                message={{
-                  role: 'suspect',
-                  text: typing.text,
-                  emotionMark: typing.emotionMark,
-                }}
+                message={{ role: 'suspect', text: typing.text, emotionMark: typing.emotionMark }}
                 suspectName={activeProfile?.name}
               />
+            )}
+            {/* API error with retry */}
+            {retryCtx && !state.isLoading && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '10px 0',
+              }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                  {activeProfile?.name}沉默不语…
+                </span>
+                <button
+                  className="btn"
+                  style={{ fontSize: '0.8rem', padding: '4px 14px' }}
+                  onClick={handleRetry}
+                >
+                  重试
+                </button>
+              </div>
             )}
             {/* Loading */}
             {state.isLoading && !typing && (
@@ -266,6 +305,26 @@ export default function Interrogation({ state, dispatch }) {
           />
         </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '32px', left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--bg-card)', border: '1px solid var(--accent)',
+          color: 'var(--accent)', fontFamily: 'var(--font-mono)',
+          fontSize: '0.8rem', padding: '8px 20px',
+          pointerEvents: 'none', zIndex: 9000,
+          animation: 'fadeInUp 0.2s ease',
+        }}>
+          {toast}
+          <style>{`
+            @keyframes fadeInUp {
+              from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+              to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import SuspectPortrait from './SuspectPortrait'
-import { judge } from '../api'
+import { judge, generateTruthReveal } from '../api'
 
 export default function Accusation({ state, dispatch }) {
   const [targetId, setTargetId] = useState(state.accusation.targetId)
@@ -24,24 +24,33 @@ export default function Accusation({ state, dispatch }) {
     dispatch({ type: 'SET_ACCUSATION_REASON', reason: reason.trim() })
     dispatch({ type: 'SUBMIT_ACCUSATION' })
 
-    try {
-      const verdict = await judge(
-        { targetId, reason: reason.trim() },
-        state
-      )
-      dispatch({ type: 'SET_VERDICT', verdict })
-    } catch {
-      // Mock verdict as fallback
-      dispatch({
-        type: 'SET_VERDICT',
-        verdict: {
-          correct: targetId === state.culpritId,
-          score: targetId === state.culpritId ? 80 : 35,
-          comment: '案件真相与你推理的方向有交集，但关键证据的解读有待商榷。',
-          truth: `真凶是${state.currentCase.suspects.find(s => s.id === state.culpritId).name}。完整案件经过将在下一版本中揭晓。`,
-        },
-      })
-    }
+    // allSettled so one failure doesn't block the other
+    const [judgeSettled, revealSettled] = await Promise.allSettled([
+      judge({ targetId, reason: reason.trim() }, state),
+      generateTruthReveal(state),
+    ])
+
+    const correct = targetId === state.culpritId
+    const judgeResult = judgeSettled.status === 'fulfilled'
+      ? judgeSettled.value
+      : {
+          correct,
+          score: correct ? 80 : 35,
+          comment: '案件真相与你推理的方向有交集，但关键证据链还有待深挖。',
+          truth: `真凶是${state.currentCase.suspects.find(s => s.id === state.culpritId).name}。`,
+        }
+    const revealResult = revealSettled.status === 'fulfilled'
+      ? revealSettled.value
+      : { narrative: null, clueAnalysis: [] }
+
+    dispatch({
+      type: 'SET_VERDICT',
+      verdict: {
+        ...judgeResult,
+        narrative: revealResult.narrative,
+        clueAnalysis: revealResult.clueAnalysis,
+      },
+    })
   }
 
   const suspects = state.currentCase.suspects
@@ -103,14 +112,12 @@ export default function Accusation({ state, dispatch }) {
         </div>
       </div>
 
-      {/* Error */}
       {error && (
         <p style={{ color: 'var(--danger)', textAlign: 'center', marginBottom: '16px', fontSize: '0.9rem' }}>
           {error}
         </p>
       )}
 
-      {/* Submit */}
       <div style={{ textAlign: 'center' }}>
         <button
           className="btn btn-danger"

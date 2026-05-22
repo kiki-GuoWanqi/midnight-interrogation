@@ -1,6 +1,8 @@
 import { useReducer, useState, useCallback } from 'react'
 import { gameReducer, initialState } from './reducer'
 import StartScreen from './components/StartScreen'
+import CaseSelect from './components/CaseSelect'
+import GeneratingScreen from './components/GeneratingScreen'
 import Briefing from './components/Briefing'
 import Interrogation from './components/Interrogation'
 import Accusation from './components/Accusation'
@@ -13,6 +15,8 @@ export default function App() {
 
   const handleBack = useCallback(() => {
     switch (state.phase) {
+      case 'case_select':
+      case 'generating':
       case 'briefing':
         dispatch({ type: 'BACK_TO_START' })
         break
@@ -25,12 +29,16 @@ export default function App() {
     }
   }, [state.phase])
 
-  const showBackButton = ['briefing', 'interrogation', 'accusation'].includes(state.phase)
+  const showBackButton = ['case_select', 'briefing', 'generating', 'interrogation', 'accusation'].includes(state.phase)
 
   const renderPhase = () => {
     switch (state.phase) {
       case 'start':
         return <StartScreen dispatch={dispatch} />
+      case 'case_select':
+        return <CaseSelect dispatch={dispatch} />
+      case 'generating':
+        return <GeneratingScreen state={state} dispatch={dispatch} />
       case 'briefing':
         return <Briefing state={state} dispatch={dispatch} />
       case 'interrogation':

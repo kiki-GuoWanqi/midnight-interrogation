@@ -2,6 +2,8 @@ import SuspectCard from './SuspectCard'
 
 export default function Briefing({ state, dispatch }) {
   const c = state.currentCase
+  const publicClues = state.dynamicPublicClues || c.publicClues
+  const aiGenerated = state.cluesAiGenerated
 
   return (
     <div style={{ maxWidth: '860px', margin: '0 auto', padding: '40px 24px' }}>
@@ -32,13 +34,18 @@ export default function Briefing({ state, dispatch }) {
 
       {/* Public Clues */}
       <div className="card" style={{ marginBottom: '24px' }}>
-        <h3 style={{ marginBottom: '10px' }}>
+        <h3 style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             EVIDENCE — 警方初步调查
           </span>
+          {!aiGenerated && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-muted)', opacity: 0.6 }}>
+              [预设线索]
+            </span>
+          )}
         </h3>
         <ul style={{ paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-          {c.publicClues.map((clue, i) => (
+          {publicClues.map((clue, i) => (
             <li key={i} style={{ marginBottom: '6px' }}>{clue}</li>
           ))}
         </ul>

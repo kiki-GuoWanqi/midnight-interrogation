@@ -1,5 +1,14 @@
+import { useState } from 'react'
+
 export default function ChatBubble({ message, suspectName, onSave }) {
   const isPlayer = message.role === 'player'
+  const [saved, setSaved] = useState(false)
+
+  const handleSave = () => {
+    if (saved) return
+    setSaved(true)
+    onSave(message)
+  }
 
   return (
     <div style={{
@@ -43,17 +52,22 @@ export default function ChatBubble({ message, suspectName, onSave }) {
       {/* Save to clue button */}
       {!isPlayer && onSave && (
         <button
-          onClick={() => onSave(message)}
+          onClick={handleSave}
+          disabled={saved}
           style={{
-            background: 'none', border: 'none', color: 'var(--text-muted)',
-            cursor: 'pointer', fontSize: '0.75rem', marginTop: '4px',
+            background: 'none', border: 'none',
+            color: saved ? 'var(--accent-dim)' : 'var(--text-muted)',
+            cursor: saved ? 'default' : 'pointer',
+            fontSize: '0.75rem', marginTop: '4px',
             fontFamily: 'var(--font-body)',
-            textDecoration: 'underline', opacity: 0.6,
+            textDecoration: saved ? 'none' : 'underline',
+            opacity: saved ? 0.8 : 0.6,
+            transition: 'all 0.2s',
           }}
-          onMouseEnter={e => e.target.style.opacity = '1'}
-          onMouseLeave={e => e.target.style.opacity = '0.6'}
+          onMouseEnter={e => { if (!saved) e.target.style.opacity = '1' }}
+          onMouseLeave={e => { if (!saved) e.target.style.opacity = '0.6' }}
         >
-          保存到线索板
+          {saved ? '✓ 已保存' : '保存到线索板'}
         </button>
       )}
     </div>

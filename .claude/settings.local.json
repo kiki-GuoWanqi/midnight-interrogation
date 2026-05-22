@@ -21,7 +21,12 @@
       "Bash(npx vercel *)",
       "WebFetch(domain:api-docs.deepseek.com)",
       "Bash(curl *)",
-      "Bash(npx wrangler *)"
+      "Bash(npx wrangler *)",
+      "Bash(git *)",
+      "Bash(Read \"C:\\\\Users\\\\86151\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-86151-Desktop---demo\\\\bac98f4c-5257-483d-87d0-8e0071ed137e\\\\tasks\\\\bjw51f3ak.output\")",
+      "Bash(gh auth *)",
+      "Bash(winget install *)",
+      "PowerShell(& \"C:\\\\Program Files\\\\GitHub CLI\\\\gh\" auth login -w 2>&1)"
     ]
   }
 }

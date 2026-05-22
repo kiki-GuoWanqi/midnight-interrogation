@@ -13,7 +13,7 @@ function getAudio() {
 export function startBGM() {
   try {
     const a = getAudio()
-    a.currentTime = 0
+    if (a.ended || a.currentTime === 0) a.currentTime = 0
     a.play().catch(() => {})
   } catch {}
 }

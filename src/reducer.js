@@ -25,25 +25,6 @@ function buildInitialSuspects(caseTemplate, culpritId) {
 }
 
 // --- Initial State ---
-const freshCase = () => {
-  const caseTemplate = pickRandom(CASE_TEMPLATES)
-  const culpritId = pickRandom(caseTemplate.suspects).id
-  return {
-    currentCase: caseTemplate,
-    culpritId,
-    phase: 'briefing',
-    questionsRemaining: 25,
-    questionsTotal: 25,
-    usedForensicClues: [],
-    activeSuspect: caseTemplate.suspects[0].id,
-    suspects: buildInitialSuspects(caseTemplate, culpritId),
-    clues: [],
-    accusation: { targetId: null, reason: '' },
-    verdict: null,
-    isLoading: false,
-  }
-}
-
 export const initialState = {
   phase: 'start',
   currentCase: null,
@@ -57,13 +38,32 @@ export const initialState = {
   accusation: { targetId: null, reason: '' },
   verdict: null,
   isLoading: false,
+  dynamicPublicClues: null,
+  dynamicForensicClues: null,
+  cluesAiGenerated: false,
 }
 
 // --- Reducer ---
 export function gameReducer(state, action) {
   switch (action.type) {
     case 'NEW_GAME': {
-      return { ...initialState, ...freshCase() }
+      return { ...initialState, phase: 'case_select' }
+    }
+
+    case 'SELECT_CASE': {
+      const caseTemplate = CASE_TEMPLATES.find(c => c.id === action.caseId)
+      if (!caseTemplate) return state
+      const culpritId = pickRandom(caseTemplate.suspects).id
+      return {
+        ...initialState,
+        currentCase: caseTemplate,
+        culpritId,
+        phase: 'generating',
+        questionsRemaining: 25,
+        questionsTotal: 25,
+        activeSuspect: caseTemplate.suspects[0].id,
+        suspects: buildInitialSuspects(caseTemplate, culpritId),
+      }
     }
 
     case 'SEND_MESSAGE': {
@@ -120,7 +120,18 @@ export function gameReducer(state, action) {
     }
 
     case 'CHAT_ERROR': {
-      return { ...state, isLoading: false }
+      return {
+        ...state,
+        isLoading: false,
+        // refund the question that was deducted if the API truly failed
+        questionsRemaining: action.refund
+          ? Math.min(state.questionsRemaining + 1, state.questionsTotal)
+          : state.questionsRemaining,
+      }
+    }
+
+    case 'SET_LOADING': {
+      return { ...state, isLoading: true }
     }
 
     case 'SWITCH_SUSPECT': {
@@ -156,12 +167,11 @@ export function gameReducer(state, action) {
     }
 
     case 'ADD_FORENSIC_CLUE': {
-      const available = state.currentCase.forensicClues.filter(
-        (_, i) => !state.usedForensicClues.includes(i)
-      )
+      const pool = state.dynamicForensicClues || state.currentCase.forensicClues
+      const available = pool.filter((_, i) => !state.usedForensicClues.includes(i))
       if (available.length === 0 || state.questionsRemaining <= 0) return state
       const picked = pickRandom(available)
-      const pickedIndex = state.currentCase.forensicClues.indexOf(picked)
+      const pickedIndex = pool.indexOf(picked)
       const clue = {
         id: generateId(),
         text: picked,
@@ -174,6 +184,16 @@ export function gameReducer(state, action) {
         questionsRemaining: state.questionsRemaining - 1,
         usedForensicClues: [...state.usedForensicClues, pickedIndex],
         clues: [...state.clues, clue],
+      }
+    }
+
+    case 'SET_DYNAMIC_CLUES': {
+      return {
+        ...state,
+        dynamicPublicClues: action.publicClues,
+        dynamicForensicClues: action.forensicClues,
+        cluesAiGenerated: action.aiGenerated,
+        phase: 'briefing',
       }
     }
 

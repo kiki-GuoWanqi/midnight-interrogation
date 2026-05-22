@@ -60,6 +60,43 @@ export default {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
+      // Dedicated endpoint for long-form content (narrative + clue analysis)
+      if (path === '/api/reveal') {
+        const { systemPrompt, messages } = await request.json()
+        if (!systemPrompt || !messages) {
+          return new Response(JSON.stringify({ error: 'Missing params' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        const resp = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            messages: [{ role: 'system', content: systemPrompt }, ...messages],
+            temperature: 0.7,
+            max_tokens: 2048,
+          }),
+        })
+
+        if (!resp.ok) {
+          const errText = await resp.text()
+          return new Response(JSON.stringify({ error: `DeepSeek error ${resp.status}: ${errText.slice(0, 200)}` }), {
+            status: 502,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const data = await resp.json()
+        const text = data.choices?.[0]?.message?.content || ''
+
+        return new Response(JSON.stringify({ text }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
       if (path === '/api/judge') {
         const { accusation, caseInfo } = await request.json()
 
